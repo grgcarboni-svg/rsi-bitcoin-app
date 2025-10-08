@@ -3,11 +3,10 @@ import requests
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
-import io
 
 pd.options.mode.chained_assignment = None
 
-@st.cache_data(ttl=300)  # Cache per reattività, refresh ogni 5 min
+@st.cache_data(ttl=300)  # Cache per reattività
 def calculate_rsi(prices, period=14):
     delta = prices.diff()
     gain = delta.where(delta > 0, 0).rolling(window=period).mean()
@@ -16,11 +15,11 @@ def calculate_rsi(prices, period=14):
     rsi = 100 - (100 / (1 + rs))
     return rsi
 
-def get_coingecko_data(days=180):
-    url = f"https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=usd&days={days}&interval=daily"
+def get_coingecko_data(days=180, crypto_id='bitcoin'):
+    url = f"https://api.coingecko.com/api/v3/coins/{crypto_id}/market_chart?vs_currency=usd&days={days}&interval=daily"
     response = requests.get(url)
     if response.status_code != 200:
-        st.error("Errore API CoinGecko")
+        st.error(f"Errore API CoinGecko per {crypto_id}")
         st.stop()
     data = response.json()
     prices = [point[1] for point in data['prices']]
@@ -31,31 +30,44 @@ def get_coingecko_data(days=180):
     df.index = pd.to_datetime(df.index)
     return df
 
-def get_live_price():
-    url = "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd"
+def get_live_price(crypto_id='bitcoin'):
+    url = f"https://api.coingecko.com/api/v3/simple/price?ids={crypto_id}&vs_currencies=usd"
     response = requests.get(url)
     if response.status_code != 200:
-        st.error("Errore API live")
+        st.error(f"Errore API live per {crypto_id}")
         st.stop()
-    return response.json()['bitcoin']['usd']
+    return response.json()[crypto_id]['usd']
 
-# Interfaccia Streamlit
-st.title("🚀 Analisi RSI con Medie Mobili su Bitcoin")
-st.markdown("App reattiva per monitorare RSI(14), SMA e segnali buy/sell su 6 mesi di dati.")
+# Mappa ticker a ID CoinGecko
+TICKER_MAP = {
+    'BTC': 'bitcoin',
+    'ETH': 'ethereum',
+    'SOL': 'solana',
+    'ADA': 'cardano',
+    'DOT': 'polkadot',
+    'BNB': 'binancecoin'  # BNB (Binance Coin)
+}
+
+# Titolo e Intro (sempre visibile)
+st.title("🚀 Analisi RSI con Medie Mobili su Crypto")
+st.markdown("App gratuita per monitorare RSI(14), SMA e segnali buy/sell su BTC, ETH, SOL, ADA, DOT e BNB. Seleziona un ticker e analizza!")
 
 # Sidebar per opzioni
-periodo = st.sidebar.selectbox("Periodo dati", [90, 180, 365], index=1)  # Default 6 mesi
+ticker_symbol = st.sidebar.selectbox("Seleziona Ticker Crypto", list(TICKER_MAP.keys()), index=0)
+crypto_id = TICKER_MAP[ticker_symbol]
+periodo = st.sidebar.selectbox("Periodo dati (giorni)", [90, 180, 365], index=1)
+
 if st.sidebar.button("Analizza Ora"):
-    with st.spinner("Caricamento dati live..."):
+    with st.spinner(f"Caricamento dati live per {ticker_symbol}..."):
         try:
-            df = get_coingecko_data(periodo)
+            df = get_coingecko_data(periodo, crypto_id)
             df['RSI'] = calculate_rsi(df['Close'])
             df = df.dropna()
             
             df['SMA50'] = df['Close'].rolling(window=50).mean()
             df['SMA100'] = df['Close'].rolling(window=100).mean() if len(df) >= 100 else df['Close'].rolling(window=min(50, len(df))).mean()
             
-            live_price = get_live_price()
+            live_price = get_live_price(crypto_id)
             
             df['oversold'] = df['RSI'] < 30
             df['overbought'] = df['RSI'] > 70
@@ -115,10 +127,10 @@ if st.sidebar.button("Analizza Ora"):
             else:
                 signal = "Hold (Momentum neutro o trend stabile)"
             
-            # Output in Streamlit
+            # Output
             col1, col2 = st.columns(2)
             with col1:
-                st.metric("Prezzo Live", f"${live_price:,.2f}")
+                st.metric(f"Prezzo Live {ticker_symbol}", f"${live_price:,.2f}")
                 st.metric("RSI(14) Ultimo", f"{latest['RSI']:.1f}")
                 st.metric("Segnale", signal)
                 st.metric("Posizione vs SMA100", current_position)
@@ -132,7 +144,7 @@ if st.sidebar.button("Analizza Ora"):
             st.subheader("Tabella Mensile")
             st.dataframe(monthly_summary)
             
-            st.subheader("Date di Interazioni con Medie")
+            st.subheader(f"Date di Interazioni con Medie per {ticker_symbol}")
             if not interactions_df.empty:
                 st.dataframe(interactions_df)
             else:
@@ -142,4 +154,4 @@ if st.sidebar.button("Analizza Ora"):
             st.error(f"Errore: {e}")
 
 st.sidebar.markdown("---")
-st.sidebar.info("App creata con Streamlit. Dati da CoinGecko API.")
+st.sidebar.info("App gratuita creata con Streamlit. Dati da CoinGecko API.")
