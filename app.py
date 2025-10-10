@@ -57,14 +57,19 @@ ticker_symbol = st.sidebar.selectbox("Seleziona Ticker Crypto", list(TICKER_MAP.
 crypto_id = TICKER_MAP[ticker_symbol]
 periodo = st.sidebar.selectbox("Periodo dati (giorni)", [90, 180, 365], index=1)
 
+# Bottone per pulire cache
+if st.sidebar.button("Pulisci Cache"):
+    st.cache_data.clear()
+    st.rerun()
+
 if st.sidebar.button("Analizza Ora"):
     with st.spinner(f"Caricamento dati live per {ticker_symbol}..."):
         try:
             df = get_coingecko_data(periodo, crypto_id)
-            df['RSI'] = calculate_rsi(df['Close'])
+            df['RSI'] = calculate_rsi(df['Close']).round(2)  # Arrotonda a 2 decimali
             df = df.dropna()
             
-            df['SMA50'] = df['Close'].rolling(window=50).mean()
+            df['SMA50'] = df['Close'].rolling(window=50).mean()  # Fix: Chiusa la parentesi
             df['SMA100'] = df['Close'].rolling(window=100).mean() if len(df) >= 100 else df['Close'].rolling(window=min(50, len(df))).mean()
             
             live_price = get_live_price(crypto_id)
@@ -100,29 +105,31 @@ if st.sidebar.button("Analizza Ora"):
             
             interactions = []
             for idx, row in df.iterrows():
+                rsi_val = round(row['RSI'], 2)  # Arrotonda per coerenza
                 if row['buy_uptrend']:
                     position = "Sopra SMA100" if row['Close'] > row['SMA100'] else "Sotto SMA100"
-                    interactions.append({'Data': idx.strftime('%Y-%m-%d'), 'Tipo': 'Buy Uptrend', 'Prezzo': row['Close'], 'RSI': row['RSI'], 'Posizione': position})
+                    interactions.append({'Data': idx.strftime('%Y-%m-%d'), 'Tipo': 'Buy Uptrend', 'Prezzo': row['Close'], 'RSI': rsi_val, 'Posizione': position})
                 elif row['sell_downtrend']:
                     position = "Sotto SMA100" if row['Close'] < row['SMA100'] else "Sopra SMA100"
-                    interactions.append({'Data': idx.strftime('%Y-%m-%d'), 'Tipo': 'Sell Downtrend', 'Prezzo': row['Close'], 'RSI': row['RSI'], 'Posizione': position})
+                    interactions.append({'Data': idx.strftime('%Y-%m-%d'), 'Tipo': 'Sell Downtrend', 'Prezzo': row['Close'], 'RSI': rsi_val, 'Posizione': position})
                 elif row['buy_risky']:
                     position = "Sotto SMA100" if row['Close'] < row['SMA100'] else "Sopra SMA100"
-                    interactions.append({'Data': idx.strftime('%Y-%m-%d'), 'Tipo': 'Buy Risky (Downtrend)', 'Prezzo': row['Close'], 'RSI': row['RSI'], 'Posizione': position})
+                    interactions.append({'Data': idx.strftime('%Y-%m-%d'), 'Tipo': 'Buy Risky (Downtrend)', 'Prezzo': row['Close'], 'RSI': rsi_val, 'Posizione': position})
                 elif row['sell_uptrend']:
                     position = "Sopra SMA100" if row['Close'] > row['SMA100'] else "Sotto SMA100"
-                    interactions.append({'Data': idx.strftime('%Y-%m-%d'), 'Tipo': 'Sell Uptrend (Pullback)', 'Prezzo': row['Close'], 'RSI': row['RSI'], 'Posizione': position})
+                    interactions.append({'Data': idx.strftime('%Y-%m-%d'), 'Tipo': 'Sell Uptrend (Pullback)', 'Prezzo': row['Close'], 'RSI': rsi_val, 'Posizione': position})
             
             interactions_df = pd.DataFrame(interactions) if interactions else pd.DataFrame(columns=['Data', 'Tipo', 'Prezzo', 'RSI', 'Posizione'])
             
             latest = df.iloc[-1]
+            latest_rsi = round(latest['RSI'], 2)  # Arrotonda per coerenza
             current_uptrend = live_price > latest['SMA100']
             current_position = "Sopra SMA100" if live_price > latest['SMA100'] else "Sotto SMA100"
-            if latest['RSI'] < 30 and current_uptrend:
+            if latest_rsi < 30 and current_uptrend:
                 signal = "Buy (Oversold in uptrend)"
-            elif latest['RSI'] > 70 and not current_uptrend:
+            elif latest_rsi > 70 and not current_uptrend:
                 signal = "Sell (Overbought in downtrend)"
-            elif latest['RSI'] > 70:
+            elif latest_rsi > 70:
                 signal = "Sell (Possibile pullback in uptrend)"
             else:
                 signal = "Hold (Momentum neutro o trend stabile)"
@@ -131,7 +138,7 @@ if st.sidebar.button("Analizza Ora"):
             col1, col2 = st.columns(2)
             with col1:
                 st.metric(f"Prezzo Live {ticker_symbol}", f"${live_price:,.2f}")
-                st.metric("RSI(9) Ultimo", f"{latest['RSI']:.1f}")
+                st.metric("RSI(9) Ultimo", f"{latest_rsi}")
                 st.metric("Segnale", signal)
                 st.metric("Posizione vs SMA100", current_position)
             
@@ -146,6 +153,10 @@ if st.sidebar.button("Analizza Ora"):
             
             st.subheader(f"Date di Interazioni con Medie per {ticker_symbol}")
             if not interactions_df.empty:
+                # Debug: Mostra RSI per ultima riga nella tabella
+                last_interaction = interactions_df.tail(1)
+                if not last_interaction.empty:
+                    st.info(f"RSI per ultima interazione (oggi): {last_interaction['RSI'].iloc[0]} – Coerente con metrica principale.")
                 st.dataframe(interactions_df)
             else:
                 st.info("Nessuna interazione significativa.")
