@@ -45,7 +45,7 @@ TICKER_MAP = {
     'SOL': 'solana',
     'ADA': 'cardano',
     'DOT': 'polkadot',
-    'BNB': 'binancecoin'  # BNB (Binance Coin)
+    'BNB': 'binancecoin'
 }
 
 # Titolo e Intro (sempre visibile)
@@ -66,7 +66,7 @@ if st.sidebar.button("Analizza Ora"):
     with st.spinner(f"Caricamento dati live per {ticker_symbol}..."):
         try:
             df = get_coingecko_data(periodo, crypto_id)
-            df['RSI'] = calculate_rsi(df['Close']).round(2)  # Arrotonda a 2 decimali
+            df['RSI'] = calculate_rsi(df['Close']).round(2)
             df = df.dropna()
             
             df['SMA50'] = df['Close'].rolling(window=50).mean()
@@ -79,6 +79,8 @@ if st.sidebar.button("Analizza Ora"):
             
             df['oversold'] = df['RSI'] < 30
             df['overbought'] = df['RSI'] > 70
+            df['extreme_oversold'] = df['RSI'] < 20  # Nuova condizione per RSI < 20
+            df['extreme_overbought'] = df['RSI'] > 80  # Nuova condizione per RSI > 80
             sma_ref = df['SMA100']
             df['uptrend'] = df['Close'] > sma_ref
             df['downtrend'] = df['Close'] < sma_ref
@@ -92,6 +94,8 @@ if st.sidebar.button("Analizza Ora"):
             overbought_days = df['overbought'].sum()
             oversold_events = (df['oversold'] != df['oversold'].shift()).cumsum()[df['oversold']].nunique()
             overbought_events = (df['overbought'] != df['overbought'].shift()).cumsum()[df['overbought']].nunique()
+            extreme_oversold_days = df['extreme_oversold'].sum()
+            extreme_overbought_days = df['extreme_overbought'].sum()
             
             buy_uptrend_count = df['buy_uptrend'].sum()
             sell_downtrend_count = df['sell_downtrend'].sum()
@@ -108,7 +112,7 @@ if st.sidebar.button("Analizza Ora"):
             
             interactions = []
             for idx, row in df.iterrows():
-                rsi_val = round(row['RSI'], 2)  # Arrotonda per coerenza
+                rsi_val = round(row['RSI'], 2)
                 if row['buy_uptrend']:
                     position = "Sopra SMA100" if row['Close'] > row['SMA100'] else "Sotto SMA100"
                     interactions.append({'Data': idx.strftime('%Y-%m-%d'), 'Tipo': 'Buy Uptrend', 'Prezzo': row['Close'], 'RSI': rsi_val, 'Posizione': position})
@@ -128,7 +132,7 @@ if st.sidebar.button("Analizza Ora"):
             st.info(f"Trovate {len(interactions_df)} interazioni medie nel periodo.")
             
             latest = df.iloc[-1]
-            latest_rsi = round(latest['RSI'], 2)  # Arrotonda per coerenza
+            latest_rsi = round(latest['RSI'], 2)
             current_uptrend = live_price > latest['SMA100']
             current_position = "Sopra SMA100" if live_price > latest['SMA100'] else "Sotto SMA100"
             if latest_rsi < 30 and current_uptrend:
@@ -157,7 +161,7 @@ if st.sidebar.button("Analizza Ora"):
             st.subheader("Tabella Mensile")
             st.dataframe(monthly_summary)
             
-            # Nuove sezioni per date eventi oversold e overbought
+            # Tabella per Oversold (RSI < 30)
             st.subheader("Date Eventi Oversold (RSI < 30)")
             oversold_events_df = df[df['oversold']][['RSI', 'Close']].round(2).reset_index()
             oversold_events_df['Data'] = oversold_events_df['Date'].dt.strftime('%Y-%m-%d')
@@ -166,8 +170,9 @@ if st.sidebar.button("Analizza Ora"):
             if not oversold_events_df.empty:
                 st.dataframe(oversold_events_df)
             else:
-                st.info("Nessun evento oversold nel periodo.")
+                st.info("Nessun evento oversold (RSI < 30) nel periodo.")
             
+            # Tabella per Overbought (RSI > 70)
             st.subheader("Date Eventi Overbought (RSI > 70)")
             overbought_events_df = df[df['overbought']][['RSI', 'Close']].round(2).reset_index()
             overbought_events_df['Data'] = overbought_events_df['Date'].dt.strftime('%Y-%m-%d')
@@ -176,11 +181,24 @@ if st.sidebar.button("Analizza Ora"):
             if not overbought_events_df.empty:
                 st.dataframe(overbought_events_df)
             else:
-                st.info("Nessun evento overbought nel periodo.")
+                st.info("Nessun evento overbought (RSI > 70) nel periodo.")
             
+            # Nuova tabella per Prezzi Triggering Estremi (RSI < 20 e RSI > 80)
+            st.subheader("Prezzi Triggering Estremi (RSI < 20 e RSI > 80)")
+            extreme_events_df = df[df['extreme_oversold'] | df['extreme_overbought']][['RSI', 'Close']].round(2).reset_index()
+            extreme_events_df['Data'] = extreme_events_df['Date'].dt.strftime('%Y-%m-%d')
+            extreme_events_df['Tipo'] = extreme_events_df['RSI'].apply(lambda x: 'Extreme Oversold' if x < 20 else 'Extreme Overbought')
+            extreme_events_df = extreme_events_df[['Data', 'RSI', 'Close', 'Tipo']]
+            extreme_events_df.columns = ['Data', 'RSI', 'Prezzo', 'Tipo']
+            if not extreme_events_df.empty:
+                st.dataframe(extreme_events_df)
+                st.info(f"Trovati {len(extreme_events_df)} eventi estremi: {extreme_oversold_days} giorni RSI < 20, {extreme_overbought_days} giorni RSI > 80.")
+            else:
+                st.warning("Nessun evento estremo (RSI < 20 o RSI > 80) nel periodo. Prova un periodo più lungo o ticker più volatile.")
+            
+            # Tabella per Interazioni con Medie
             st.subheader(f"Date di Interazioni con Medie per {ticker_symbol}")
             if not interactions_df.empty:
-                # Debug: Mostra RSI per ultima riga nella tabella
                 last_interaction = interactions_df.tail(1)
                 if not last_interaction.empty:
                     st.info(f"RSI per ultima interazione (oggi): {last_interaction['RSI'].iloc[0]} – Coerente con metrica principale.")
