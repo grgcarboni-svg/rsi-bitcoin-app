@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 pd.options.mode.chained_assignment = None
 
 @st.cache_data(ttl=300)  # Cache per reattività
-def calculate_rsi(prices, period=14):
+def calculate_rsi(prices, period=9):  # RSI(9)
     delta = prices.diff()
     gain = delta.where(delta > 0, 0).rolling(window=period).mean()
     loss = -delta.where(delta < 0, 0).rolling(window=period).mean()
@@ -50,7 +50,7 @@ TICKER_MAP = {
 
 # Titolo e Intro (sempre visibile)
 st.title("🚀 Analisi RSI con Medie Mobili su Crypto")
-st.markdown("App gratuita per monitorare RSI(14), SMA e segnali buy/sell su BTC, ETH, SOL, ADA, DOT e BNB. Seleziona un ticker e analizza!")
+st.markdown("App gratuita per monitorare RSI(9), SMA e segnali buy/sell su BTC, ETH, SOL, ADA, DOT e BNB. Seleziona un ticker e analizza!")
 
 # Sidebar per opzioni
 ticker_symbol = st.sidebar.selectbox("Seleziona Ticker Crypto", list(TICKER_MAP.keys()), index=0)
@@ -131,7 +131,7 @@ if st.sidebar.button("Analizza Ora"):
             col1, col2 = st.columns(2)
             with col1:
                 st.metric(f"Prezzo Live {ticker_symbol}", f"${live_price:,.2f}")
-                st.metric("RSI(14) Ultimo", f"{latest['RSI']:.1f}")
+                st.metric("RSI(9) Ultimo", f"{latest['RSI']:.1f}")
                 st.metric("Segnale", signal)
                 st.metric("Posizione vs SMA100", current_position)
             
